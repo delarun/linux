@@ -1104,7 +1104,7 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 				return;
 			}
 		} else {
-			if (payload_len != sizeof(resp->intval)) {
+			if (payload_len < sizeof(resp->intval)) {
 				dev_warn(battmgr->dev,
 					 "invalid payload length for %#x request: %zd\n",
 					 property, payload_len);
@@ -1183,7 +1183,7 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 		break;
 	case BATTMGR_USB_PROPERTY_GET:
 		property = le32_to_cpu(resp->intval.property);
-		if (payload_len != sizeof(resp->intval)) {
+		if (payload_len < sizeof(resp->intval)) {
 			dev_warn(battmgr->dev,
 				 "invalid payload length for %#x request: %zd\n",
 				 property, payload_len);
@@ -1224,7 +1224,7 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 		break;
 	case BATTMGR_WLS_PROPERTY_GET:
 		property = le32_to_cpu(resp->intval.property);
-		if (payload_len != sizeof(resp->intval)) {
+		if (payload_len < sizeof(resp->intval)) {
 			dev_warn(battmgr->dev,
 				 "invalid payload length for %#x request: %zd\n",
 				 property, payload_len);

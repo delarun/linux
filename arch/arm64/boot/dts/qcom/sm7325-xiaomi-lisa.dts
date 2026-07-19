@@ -32,6 +32,10 @@
 	compatible = "xiaomi,lisa", "qcom,sm7325";
 	chassis-type = "handset";
 
+	qcom,msm-id = <0x1db 0x10000>, <0x203 0x10000>;
+	qcom,board-id = <0x1000b 0>;
+//	qcom,board-id = <0 0>;
+
 	aliases {
 		bluetooth0 = &bluetooth;
 		serial0 = &uart5;
@@ -157,8 +161,11 @@
 		ramoops@a9000000 {
 			compatible = "ramoops";
 			reg = <0x0 0xa9000000 0x0 0x200000>;
-			pmsg-size = <0x200000>;
-			mem-type = <0x02>;
+		//	pmsg-size = <0x200000>;
+                        record-size = <0x40000>;
+			console-size = <0x40000>;
+ 			pmsg-size = <0x80000>;
+		//	mem-type = <0x02>;
 		};
 
 		removed_mem: removed@c0000000 {
