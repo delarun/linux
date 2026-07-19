@@ -188,3 +188,6 @@ sphinx_*/
 
 # bc language scripts (not LLVM bitcode)
 !kernel/time/timeconst.bc
+
+# focaltech firmware headers (not preprocessor output)
+!drivers/input/touchscreen/focaltech_touch/include/firmware/*.i
