@@ -40,6 +40,8 @@ static inline struct csot_vtdr6130 *to_csot_vtdr6130(struct drm_panel *panel)
 	return container_of(panel, struct csot_vtdr6130, panel);
 }
 
+static bool csot_vtdr6130_handoff_done;
+
 static void csot_vtdr6130_reset(struct csot_vtdr6130 *ctx)
 {
 	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
@@ -269,6 +271,20 @@ static int csot_vtdr6130_prepare(struct drm_panel *panel)
 	struct drm_dsc_picture_parameter_set pps;
 	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
 	int ret;
+	if (!csot_vtdr6130_handoff_done) {
+		csot_vtdr6130_handoff_done = true;
+		/*
+		 * XBL hands the panel over powered and running the downstream
+		 * init; re-initializing on top of that state wedges the DDIC.
+		 * Force one full controlled power cycle first.
+		 */
+		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
+		if (!regulator_bulk_enable(ARRAY_SIZE(csot_vtdr6130_supplies),
+					   ctx->supplies))
+			regulator_bulk_disable(ARRAY_SIZE(csot_vtdr6130_supplies),
+					       ctx->supplies);
+		msleep(100);
+	}
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(csot_vtdr6130_supplies),
 				    ctx->supplies);
