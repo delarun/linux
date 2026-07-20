@@ -158,12 +158,12 @@
 			no-map;
 		};
 
-		ramoops@b0000000 {
+		ramoops@a9000000 {
 			compatible = "ramoops";
-			reg = <0x0 0xb0000000 0x0 0x400000>;
-			record-size = <0x80000>;
-			console-size = <0x100000>;
-			pmsg-size = <0x80000>;
+			reg = <0x0 0xa9000000 0x0 0x200000>;
+			pmsg-size = <0x200000>;
+			ecc-size = <16>;
+			mem-type = <2>;
 		};
 
 		removed_mem: removed@c0000000 {
@@ -204,6 +204,12 @@
 			qcom,client-id = <1>;
 			qcom,vmid = <QCOM_SCM_VMID_MSS_MSA>,
 				    <QCOM_SCM_VMID_NAV>;
+		};
+		venus_fw_iova: venus-fw-iova {
+			iommu-addresses = <&venus 0x0 0x00000000 0x0 0x25800000>;
+		};
+		venus_high_iova: venus-high-iova {
+			iommu-addresses = <&venus 0x0 0xe0000000 0x0 0x20000000>;
 		};
 	};
 
@@ -1619,6 +1625,7 @@
 
 &venus {
 	firmware-name = "qcom/sm7325/xiaomi/lisa/vpu20_1v.mbn";
+	memory-region = <&video_mem>, <&venus_fw_iova>, <&venus_high_iova>;
 	status = "okay";
 };
 
@@ -1626,13 +1633,6 @@
 	status = "okay";
 };
 
-&venus_opp_table {
-	opp-133330000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
-	opp-240000000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
-	opp-335000000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
-	opp-424000000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
-	opp-460000048 { required-opps = <&rpmhpd_opp_turbo_l1>; };
-};
 &adsp_rpc_remote_heap_mem {
 	reg = <0x0 0x9e500000 0x0 0x800000>;
 };
