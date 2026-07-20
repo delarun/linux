@@ -519,6 +519,12 @@ static int qcom_battmgr_bat_get_property(struct power_supply *psy,
 	if (!battmgr->service_up)
 		return -EAGAIN;
 
+	/* Xiaomi lisa ADSP fw replies a 12-byte stub to BATT_MODEL_NAME; don't ask */
+	if (psp == POWER_SUPPLY_PROP_MODEL_NAME) {
+		val->strval = "lisa-battery";
+		return 0;
+	}
+
 	if (battmgr->variant == QCOM_BATTMGR_SC8280XP ||
 	    battmgr->variant == QCOM_BATTMGR_X1E80100)
 		ret = qcom_battmgr_bat_sc8280xp_update(battmgr, psp);

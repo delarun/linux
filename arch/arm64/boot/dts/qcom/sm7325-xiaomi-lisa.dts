@@ -158,14 +158,12 @@
 			no-map;
 		};
 
-		ramoops@a9000000 {
+		ramoops@b0000000 {
 			compatible = "ramoops";
-			reg = <0x0 0xa9000000 0x0 0x200000>;
-		//	pmsg-size = <0x200000>;
-                        record-size = <0x40000>;
-			console-size = <0x40000>;
- 			pmsg-size = <0x80000>;
-		//	mem-type = <0x02>;
+			reg = <0x0 0xb0000000 0x0 0x400000>;
+			record-size = <0x80000>;
+			console-size = <0x100000>;
+			pmsg-size = <0x80000>;
 		};
 
 		removed_mem: removed@c0000000 {
@@ -1634,4 +1632,7 @@
 	opp-335000000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
 	opp-424000000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
 	opp-460000048 { required-opps = <&rpmhpd_opp_turbo_l1>; };
+};
+&adsp_rpc_remote_heap_mem {
+	reg = <0x0 0x9e500000 0x0 0x800000>;
 };
