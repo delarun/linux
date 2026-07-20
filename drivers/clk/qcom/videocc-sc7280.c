@@ -8,7 +8,7 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
-
+#include <linux/delay.h>
 #include <dt-bindings/clock/qcom,videocc-sc7280.h>
 
 #include "clk-alpha-pll.h"
@@ -17,6 +17,18 @@
 #include "common.h"
 #include "reset.h"
 #include "gdsc.h"
+
+/*
+ * XO clk indices are not in dt-bindings header (upstream doesn't know this
+ * clock yet). Local defines for the experiment; if the header ever grows
+ * them, drop these.
+ */
+#ifndef VIDEO_CC_XO_CLK
+#define VIDEO_CC_XO_CLK		10
+#endif
+#ifndef VIDEO_CC_XO_CLK_SRC
+#define VIDEO_CC_XO_CLK_SRC	11
+#endif
 
 enum {
 	P_BI_TCXO,
@@ -75,6 +87,15 @@ static const struct clk_parent_data video_cc_parent_data_1[] = {
 	{ .fw_name = "sleep_clk" },
 };
 
+/* XO-only parent map for video_cc_xo_clk_src (ported from downstream yupik) */
+static const struct parent_map video_cc_parent_map_2[] = {
+	{ P_BI_TCXO, 0 },
+};
+
+static const struct clk_parent_data video_cc_parent_data_2[] = {
+	{ .fw_name = "bi_tcxo" },
+};
+
 static const struct freq_tbl ftbl_video_cc_iris_clk_src[] = {
 	F(133333333, P_VIDEO_PLL0_OUT_EVEN, 3, 0, 0),
 	F(240000000, P_VIDEO_PLL0_OUT_EVEN, 2, 0, 0),
@@ -114,6 +135,30 @@ static struct clk_rcg2 video_cc_sleep_clk_src = {
 		.name = "video_cc_sleep_clk_src",
 		.parent_data = video_cc_parent_data_1,
 		.num_parents = ARRAY_SIZE(video_cc_parent_data_1),
+		.ops = &clk_rcg2_ops,
+	},
+};
+
+/*
+ * Ported from downstream videocc-yupik.c: XO branch feeding the video CC
+ * always-on logic (GDSC FSM / hw-trigger handshake). Downstream marks it
+ * CLK_IS_CRITICAL; mainline was missing it entirely.
+ */
+static const struct freq_tbl ftbl_video_cc_xo_clk_src[] = {
+	F(19200000, P_BI_TCXO, 1, 0, 0),
+	{ }
+};
+
+static struct clk_rcg2 video_cc_xo_clk_src = {
+	.cmd_rcgr = 0x7000,
+	.mnd_width = 0,
+	.hid_width = 5,
+	.parent_map = video_cc_parent_map_2,
+	.freq_tbl = ftbl_video_cc_xo_clk_src,
+	.clkr.hw.init = &(struct clk_init_data){
+		.name = "video_cc_xo_clk_src",
+		.parent_data = video_cc_parent_data_2,
+		.num_parents = ARRAY_SIZE(video_cc_parent_data_2),
 		.ops = &clk_rcg2_ops,
 	},
 };
@@ -218,6 +263,24 @@ static struct clk_branch video_cc_sleep_clk = {
 	},
 };
 
+static struct clk_branch video_cc_xo_clk = {
+	.halt_reg = 0x7018,
+	.halt_check = BRANCH_HALT,
+	.clkr = {
+		.enable_reg = 0x7018,
+		.enable_mask = BIT(0),
+		.hw.init = &(struct clk_init_data){
+			.name = "video_cc_xo_clk",
+			.parent_hws = (const struct clk_hw*[]){
+				&video_cc_xo_clk_src.clkr.hw,
+			},
+			.num_parents = 1,
+			.flags = CLK_IS_CRITICAL | CLK_SET_RATE_PARENT,
+			.ops = &clk_branch2_ops,
+		},
+	},
+};
+
 static struct clk_branch video_cc_venus_ahb_clk = {
 	.halt_reg = 0x801c,
 	.halt_check = BRANCH_HALT,
@@ -233,9 +296,9 @@ static struct clk_branch video_cc_venus_ahb_clk = {
 
 static struct gdsc mvs0_gdsc = {
 	.gdscr = 0x3004,
-	.en_rest_wait_val = 0x2,
-	.en_few_wait_val = 0x2,
-	.clk_dis_wait_val = 0x6,
+//	.en_rest_wait_val = 0x2,
+//	.en_few_wait_val = 0x2,
+//	.clk_dis_wait_val = 0x6,
 	.pd = {
 		.name = "mvs0_gdsc",
 	},
@@ -266,6 +329,8 @@ static struct clk_regmap *video_cc_sc7280_clocks[] = {
 	[VIDEO_CC_SLEEP_CLK_SRC] = &video_cc_sleep_clk_src.clkr,
 	[VIDEO_CC_VENUS_AHB_CLK] = &video_cc_venus_ahb_clk.clkr,
 	[VIDEO_PLL0] = &video_pll0.clkr,
+	[VIDEO_CC_XO_CLK] = &video_cc_xo_clk.clkr,
+	[VIDEO_CC_XO_CLK_SRC] = &video_cc_xo_clk_src.clkr,
 };
 
 static struct gdsc *video_cc_sc7280_gdscs[] = {

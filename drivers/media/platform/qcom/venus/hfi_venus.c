@@ -46,6 +46,8 @@
 #define IFACEQ_VAR_LARGE_PKT_SIZE	512
 #define IFACEQ_VAR_HUGE_PKT_SIZE	(1024 * 12)
 
+#define VTRACE(fmt, ...) do { pr_err("VENUS-TRACE: " fmt "\n", ##__VA_ARGS__); mdelay(30); } while (0)
+
 struct hfi_queue_table_header {
 	u32 version;
 	u32 size;
@@ -377,6 +379,7 @@ static void venus_set_registers(struct venus_hfi_device *hdev)
 
 static void venus_soft_int(struct venus_hfi_device *hdev)
 {
+	VTRACE("doorbell");
 	void __iomem *cpu_ic_base = hdev->core->cpu_ic_base;
 	u32 clear_bit;
 
@@ -402,6 +405,7 @@ static int venus_iface_cmdq_write_nolock(struct venus_hfi_device *hdev,
 
 	cmd_packet = (struct hfi_pkt_hdr *)pkt;
 	hdev->last_packet_type = cmd_packet->pkt_type;
+        VTRACE("cmdq write pkt_type=0x%x size=%u", cmd_packet->pkt_type, cmd_packet->size);
 
 	queue = &hdev->queues[IFACEQ_CMD_IDX];
 
@@ -704,6 +708,12 @@ static int venus_iface_msgq_read_nolock(struct venus_hfi_device *hdev,
 	ret = venus_read_queue(hdev, queue, pkt, &tx_req);
 	if (ret)
 		return ret;
+
+	{
+		struct hfi_pkt_hdr *hdr = pkt;
+
+		VTRACE("msgq read pkt_type=0x%x size=%u", hdr->pkt_type, hdr->size);
+	}
 
 	if (tx_req)
 		venus_soft_int(hdev);

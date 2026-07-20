@@ -1627,3 +1627,11 @@
 &wifi {
 	status = "okay";
 };
+
+&venus_opp_table {
+	opp-133330000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
+	opp-240000000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
+	opp-335000000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
+	opp-424000000 { required-opps = <&rpmhpd_opp_turbo_l1>; };
+	opp-460000048 { required-opps = <&rpmhpd_opp_turbo_l1>; };
+};
