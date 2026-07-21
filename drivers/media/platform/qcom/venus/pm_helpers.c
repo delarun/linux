@@ -14,15 +14,12 @@
 #include <linux/reset.h>
 #include <linux/types.h>
 #include <media/v4l2-mem2mem.h>
-#include <linux/delay.h>
 
 #include "core.h"
 #include "hfi_parser.h"
 #include "hfi_venus_io.h"
 #include "pm_helpers.h"
 #include "hfi_platform.h"
-
-#define VTRACE(fmt, ...) do { pr_err("VENUS-TRACE: " fmt "\n", ##__VA_ARGS__); mdelay(30); } while (0)
 
 static bool legacy_binding;
 
@@ -427,10 +424,8 @@ static int vcodec_control_v4(struct venus_core *core, u32 coreid, bool enable)
 		goto legacy;
 	}
 	core->hwmode_dev = true;
-	VTRACE("vctrl_v4 enable=%d set_hwmode ret=%d", enable, ret);
 	return ret;
 legacy:
-	VTRACE("vctrl_v4 legacy path");
 	if (coreid == VIDC_CORE_ID_1) {
 		ctrl = core->wrapper_base + WRAPPER_VCODEC0_MMCC_POWER_CONTROL;
 		stat = core->wrapper_base + WRAPPER_VCODEC0_MMCC_POWER_STATUS;
@@ -440,15 +435,12 @@ legacy:
 	}
 
 	if (enable) {
-		VTRACE("vctrl_v4 writel 0 -> POWER_CONTROL");
 		writel(0, ctrl);
 
 		ret = readl_poll_timeout(stat, val, val & BIT(1), 1, 100);
-		VTRACE("vctrl_v4 poll done ret=%d", ret);
 		if (ret)
 			return ret;
 	} else {
-		VTRACE("vctrl_v4 writel 1 -> POWER_CONTROL");
 		writel(1, ctrl);
 
 		ret = readl_poll_timeout(stat, val, !(val & BIT(1)), 1, 100);

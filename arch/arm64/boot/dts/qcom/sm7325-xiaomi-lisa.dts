@@ -211,6 +211,12 @@
 		venus_high_iova: venus-high-iova {
 			iommu-addresses = <&venus 0x0 0xe0000000 0x0 0x20000000>;
 		};
+//		venus_fw_iova: venus-fw-iova {
+//			iommu-addresses = <&venus 0x0 0x00000000 0x0 0x25800000>;
+//		};
+//		venus_high_iova: venus-high-iova {
+//			iommu-addresses = <&venus 0x0 0x30000000 0x0 0xd0000000>;
+//		};
 	};
 
 	/*
@@ -1626,6 +1632,10 @@
 &venus {
 	firmware-name = "qcom/sm7325/xiaomi/lisa/vpu20_1v.mbn";
 	memory-region = <&video_mem>, <&venus_fw_iova>, <&venus_high_iova>;
+//	iommus = <&apps_smmu 0x2180 0x20>,
+//		 <&apps_smmu 0x2181 0x4>,
+//		 <&apps_smmu 0x2183 0x0>,
+//		 <&apps_smmu 0x2184 0x20>;
 	status = "okay";
 };
 

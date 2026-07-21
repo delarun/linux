@@ -8,16 +8,12 @@
 #include <linux/slab.h>
 #include <linux/soc/qcom/smem.h>
 #include <media/videobuf2-v4l2.h>
-#include <linux/delay.h>
 
 #include "core.h"
 #include "hfi.h"
 #include "hfi_helper.h"
 #include "hfi_msgs.h"
 #include "hfi_parser.h"
-
-#define VTRACE(fmt, ...) do { pr_err("VENUS-TRACE: " fmt "\n", ##__VA_ARGS__); mdelay(30); } while (0)
-
 
 #define SMEM_IMG_VER_TBL	469
 #define VER_STR_SZ		128
@@ -186,17 +182,11 @@ static void event_release_buffer_ref(struct venus_core *core,
 static void event_sys_error(struct venus_core *core, u32 event,
 			    struct hfi_msg_event_notify_pkt *pkt)
 {
-	if (pkt) {
+	if (pkt)
 		dev_dbg(core->dev, VDBGH
 			"sys error (session id:%x, data1:%x, data2:%x)\n",
 			pkt->shdr.session_id, pkt->event_data1,
 			pkt->event_data2);
-		VTRACE("SYS_ERROR session=%x data1=%x data2=%x",
-		       pkt->shdr.session_id, pkt->event_data1,
-		       pkt->event_data2);
-	} else {
-		VTRACE("SYS_ERROR (no pkt)");
-	}
 
 	core->core_ops->event_notify(core, event);
 }

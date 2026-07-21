@@ -14,7 +14,6 @@
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-event.h>
 #include <media/v4l2-ctrls.h>
-#include <linux/delay.h>
 
 #include "hfi_venus_io.h"
 #include "hfi_parser.h"
@@ -24,8 +23,6 @@
 #include "pm_helpers.h"
 
 #define NUM_B_FRAMES_MAX	4
-
-#define VTRACE(fmt, ...) do { pr_err("VENUS-TRACE: " fmt "\n", ##__VA_ARGS__); mdelay(30); } while (0)
 
 /*
  * Three resons to keep MPLANE formats (despite that the number of planes
@@ -1251,7 +1248,6 @@ static int venc_verify_conf(struct venus_inst *inst)
 
 static int venc_start_streaming(struct vb2_queue *q, unsigned int count)
 {
-        VTRACE("venc_start_streaming");
 	struct venus_inst *inst = vb2_get_drv_priv(q);
 	int ret;
 

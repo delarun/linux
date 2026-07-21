@@ -46,8 +46,6 @@
 #define IFACEQ_VAR_LARGE_PKT_SIZE	512
 #define IFACEQ_VAR_HUGE_PKT_SIZE	(1024 * 12)
 
-#define VTRACE(fmt, ...) do { pr_err("VENUS-TRACE: " fmt "\n", ##__VA_ARGS__); mdelay(30); } while (0)
-
 struct hfi_queue_table_header {
 	u32 version;
 	u32 size;
@@ -366,20 +364,43 @@ static void venus_free(struct venus_hfi_device *hdev, struct mem_desc *mem)
 	dma_free_attrs(dev, mem->size, mem->kva, mem->da, mem->attrs);
 }
 
+//static void venus_set_registers(struct venus_hfi_device *hdev)
+//{
+//	const struct venus_resources *res = hdev->core->res;
+//	const struct reg_val *tbl = res->reg_tbl;
+//	unsigned int count = res->reg_tbl_size;
+//	unsigned int i;
+//
+//	for (i = 0; i < count; i++)
+//		writel(tbl[i].value, hdev->core->base + tbl[i].reg);
+//}
+
 static void venus_set_registers(struct venus_hfi_device *hdev)
 {
 	const struct venus_resources *res = hdev->core->res;
 	const struct reg_val *tbl = res->reg_tbl;
 	unsigned int count = res->reg_tbl_size;
 	unsigned int i;
+	u32 val;
 
-	for (i = 0; i < count; i++)
+	for (i = 0; i < count; i++) {
+		/*
+		 * Downstream applies 0xb0088 with mask 0x11, preserving the
+		 * remaining bits as left by XBL/fw; mainline zeroes the whole
+		 * register. Mimic downstream.
+		 */
+		if (tbl[i].reg == 0xb0088) {
+			val = readl(hdev->core->base + tbl[i].reg);
+			writel((val & ~0x11) | (tbl[i].value & 0x11),
+			       hdev->core->base + tbl[i].reg);
+			continue;
+		}
 		writel(tbl[i].value, hdev->core->base + tbl[i].reg);
+	}
 }
 
 static void venus_soft_int(struct venus_hfi_device *hdev)
 {
-	VTRACE("doorbell");
 	void __iomem *cpu_ic_base = hdev->core->cpu_ic_base;
 	u32 clear_bit;
 
@@ -405,7 +426,6 @@ static int venus_iface_cmdq_write_nolock(struct venus_hfi_device *hdev,
 
 	cmd_packet = (struct hfi_pkt_hdr *)pkt;
 	hdev->last_packet_type = cmd_packet->pkt_type;
-        VTRACE("cmdq write pkt_type=0x%x size=%u", cmd_packet->pkt_type, cmd_packet->size);
 
 	queue = &hdev->queues[IFACEQ_CMD_IDX];
 
@@ -708,12 +728,6 @@ static int venus_iface_msgq_read_nolock(struct venus_hfi_device *hdev,
 	ret = venus_read_queue(hdev, queue, pkt, &tx_req);
 	if (ret)
 		return ret;
-
-	{
-		struct hfi_pkt_hdr *hdr = pkt;
-
-		VTRACE("msgq read pkt_type=0x%x size=%u", hdr->pkt_type, hdr->size);
-	}
 
 	if (tx_req)
 		venus_soft_int(hdev);

@@ -15,6 +15,7 @@
 #include <linux/firmware/qcom/qcom_scm.h>
 #include <linux/sizes.h>
 #include <linux/soc/qcom/mdt_loader.h>
+#include <linux/delay.h>
 
 #include "core.h"
 #include "firmware.h"
@@ -23,6 +24,8 @@
 #define VENUS_PAS_ID			9
 #define VENUS_FW_MEM_SIZE		(6 * SZ_1M)
 #define VENUS_FW_START_ADDR		0x0
+
+#define VTRACE(fmt, ...) do { pr_err("VENUS-TRACE: " fmt "\n", ##__VA_ARGS__); mdelay(30); } while (0)
 
 static void venus_reset_cpu(struct venus_core *core)
 {
@@ -202,8 +205,9 @@ int venus_firmware_cfg(struct venus_core *core)
 {
 	void __iomem *cpu_cs_base = core->cpu_cs_base;
 
-	if (IS_AR50_LITE(core))
-		writel(CPU_CS_VCICMD_ARP_OFF, cpu_cs_base + CPU_CS_VCICMD);
+//	if (IS_AR50_LITE(core))
+	writel(CPU_CS_VCICMD_ARP_OFF, cpu_cs_base + CPU_CS_VCICMD);
+	VTRACE("firmware_cfg: VCICMD ARP_OFF written");
 
 	return 0;
 }
