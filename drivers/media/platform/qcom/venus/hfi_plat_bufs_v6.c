@@ -440,7 +440,7 @@ static u32 calculate_enc_scratch_size(u32 width, u32 height, u32 work_mode,
 	size = ALIGN(bitbin_size, HFI_DMA_ALIGNMENT) *
 		total_bitbin_buffers + 512;
 
-	return size * 4;
+	return size;
 }
 
 static u32 h264e_scratch_size(u32 width, u32 height, u32 work_mode,
@@ -901,7 +901,7 @@ calculate_enc_scratch1_size(u32 width, u32 height, u32 lcu_size, u32 num_ref,
 		ir_buffer_size + slice_info_bufsize + lambda_lut_size +
 		se_stats_bufsize + 1024;
 
-	return size * 4;
+	return size;
 }
 
 static u32 h264e_scratch1_size(u32 width, u32 height, u32 num_ref, bool ten_bit,
@@ -1004,7 +1004,7 @@ static u32 enc_scratch2_size(u32 width, u32 height, u32 num_ref, bool ten_bit)
 		size = (size * (num_ref + 3)) + 4096;
 	}
 
-	return size * 4;
+	return size;
 }
 
 static u32 enc_persist_size(void)
