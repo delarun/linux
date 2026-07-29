@@ -284,6 +284,7 @@
 
 &i2c5 {
 	status = "disabled";
+//	status = "okay";
 	clock-frequency = <1000000>;
 
 	pmic@34 {
@@ -301,6 +302,7 @@
 
 		backlight {
 			compatible = "mediatek,mt6372-backlight";
+			status = "disabled";
 			mediatek,bled-channel-use = /bits/ 8 <15>;
 			mediatek,bled-exponential-mode-enable;
 			default-brightness = <4096>;
