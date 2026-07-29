@@ -570,10 +570,14 @@ static void dwc3_qcom_set_role_notifier(struct dwc3 *dwc, enum usb_role next_rol
 		return;
 	}
 
-	if (qcom->current_role == USB_ROLE_DEVICE)
-		dwc3_qcom_vbus_override_enable(qcom, false);
-	else if (qcom->current_role != USB_ROLE_DEVICE)
+	//if (qcom->current_role == USB_ROLE_DEVICE)
+	//	dwc3_qcom_vbus_override_enable(qcom, false);
+	//else if (qcom->current_role != USB_ROLE_DEVICE)
+	//	dwc3_qcom_vbus_override_enable(qcom, true);
+	if (next_role == USB_ROLE_DEVICE)
 		dwc3_qcom_vbus_override_enable(qcom, true);
+	else
+		dwc3_qcom_vbus_override_enable(qcom, false);
 
 	pm_runtime_mark_last_busy(qcom->dev);
 	pm_runtime_put_sync(qcom->dev);
@@ -582,6 +586,9 @@ static void dwc3_qcom_set_role_notifier(struct dwc3 *dwc, enum usb_role next_rol
 	 * Current role changes via usb_role_switch_set_role callback protected
 	 * internally by mutex lock.
 	 */
+	dev_info(qcom->dev, "role: %d -> %d, hs_phy_ctrl=0x%08x\n",
+		 qcom->current_role, next_role,
+		 readl(qcom->qscratch_base + QSCRATCH_HS_PHY_CTRL));
 	qcom->current_role = next_role;
 }
 

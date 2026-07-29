@@ -298,7 +298,9 @@ void dwc3_set_mode(struct dwc3 *dwc, u32 mode)
 	dwc->desired_dr_role = mode;
 	spin_unlock_irqrestore(&dwc->lock, flags);
 
-	queue_work(system_freezable_wq, &dwc->drd_work);
+//	queue_work(system_freezable_wq, &dwc->drd_work);
+	mod_delayed_work(system_freezable_wq, &dwc->drd_work,
+			 msecs_to_jiffies(1000));
 }
 
 u32 dwc3_core_fifo_space(struct dwc3_ep *dep, u8 type)
@@ -1654,7 +1656,8 @@ static int dwc3_core_init_mode(struct dwc3 *dwc)
 			return dev_err_probe(dev, ret, "failed to initialize host\n");
 		break;
 	case USB_DR_MODE_OTG:
-		INIT_WORK(&dwc->drd_work, __dwc3_set_mode);
+//		INIT_WORK(&dwc->drd_work, __dwc3_set_mode);
+		INIT_DELAYED_WORK(&dwc->drd_work, __dwc3_set_mode);
 		ret = dwc3_drd_init(dwc);
 		if (ret)
 			return dev_err_probe(dev, ret, "failed to initialize dual-role\n");

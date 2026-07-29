@@ -1620,6 +1620,7 @@
 
 &usb_1_dwc3_hs {
 	remote-endpoint = <&pmic_glink_hs_in>;
+//	/delete-property/ remote-endpoint;
 };
 
 &usb_1_hsphy {

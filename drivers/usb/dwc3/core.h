@@ -1187,7 +1187,8 @@ struct dwc3_glue_ops {
  *			 represents interface_id.
  */
 struct dwc3 {
-	struct work_struct	drd_work;
+//	struct work_struct	drd_work;
+	struct delayed_work	drd_work;
 	struct dwc3_trb		*ep0_trb;
 	void			*bounce;
 	u8			*setup_buf;
@@ -1429,7 +1430,8 @@ struct dwc3 {
 #define INCRX_BURST_MODE 0
 #define INCRX_UNDEF_LENGTH_BURST_MODE 1
 
-#define work_to_dwc(w)		(container_of((w), struct dwc3, drd_work))
+//#define work_to_dwc(w)		(container_of((w), struct dwc3, drd_work))
+#define work_to_dwc(w)		(container_of(to_delayed_work(w), struct dwc3, drd_work))
 
 /* -------------------------------------------------------------------------- */
 
