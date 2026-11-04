@@ -19,6 +19,9 @@
 #include <linux/iopoll.h>
 #include <linux/usb/hcd.h>
 #include <linux/usb.h>
+#include <linux/pm_runtime.h>
+#include <linux/of_address.h>
+#include <linux/workqueue.h>
 #include "core.h"
 #include "glue.h"
 
@@ -85,6 +88,10 @@ struct dwc3_qcom {
 	struct icc_path		*icc_path_apps;
 
 	enum usb_role		current_role;
+
+	void __iomem		*hsphy_base;	/* lisa: firmware PHY override watch */
+	struct delayed_work	hsphy_watch;
+	unsigned int		hsphy_hijack_seen;
 };
 
 #define to_dwc3_qcom(d) container_of((d), struct dwc3_qcom, dwc)
@@ -614,6 +621,100 @@ struct dwc3_glue_ops dwc3_qcom_glue_ops = {
 	.pre_run_stop	= dwc3_qcom_run_stop_notifier,
 };
 
+/*
+ * xiaomi-lisa: on every USB-C attach the ADSP charger firmware (BC1.2/APSD)
+ * takes over the SNPS femto HS PHY by setting UTMI_PHY_DATAPATH_CTRL_OVERRIDE_EN
+ * with OPMODE=non-driving and never hands it back. In host mode the attached
+ * hub is then seen at full speed and never answers SETUP. Clearing the bits is
+ * not enough; the PHY needs a full reset + init, which only happens when the
+ * xHCI host is torn down too (it holds its own reference on the PHY).
+ */
+#define HSPHY_UTMI_CTRL0		0x3c
+#define HSPHY_UTMI_OPMODE_NONDRIVING	BIT(3)
+#define HSPHY_CFG0			0x94
+#define HSPHY_DATAPATH_OVERRIDE_EN	BIT(0)
+#define HSPHY_WATCH_PERIOD		msecs_to_jiffies(1000)
+
+static bool dwc3_qcom_hsphy_hijacked(struct dwc3_qcom *qcom)
+{
+	u8 cfg0 = readl(qcom->hsphy_base + HSPHY_CFG0) & 0xff;
+	u8 ctrl0 = readl(qcom->hsphy_base + HSPHY_UTMI_CTRL0) & 0xff;
+
+	return (cfg0 & HSPHY_DATAPATH_OVERRIDE_EN) &&
+	       (ctrl0 & HSPHY_UTMI_OPMODE_NONDRIVING);
+}
+
+static void dwc3_qcom_hsphy_watch(struct work_struct *work)
+{
+	struct dwc3_qcom *qcom = container_of(to_delayed_work(work),
+					      struct dwc3_qcom, hsphy_watch);
+	struct dwc3 *dwc = &qcom->dwc;
+	struct phy *phy = dwc->usb2_generic_phy[0];
+	int ret;
+
+	mutex_lock(&dwc->mutex);
+
+	if (dwc->current_dr_role != DWC3_GCTL_PRTCAP_HOST ||
+	    !dwc3_qcom_hsphy_hijacked(qcom)) {
+		qcom->hsphy_hijack_seen = 0;
+		goto out;
+	}
+
+	/* let the firmware finish charger detection first */
+	if (++qcom->hsphy_hijack_seen < 2)
+		goto out;
+
+	dev_info(qcom->dev, "HS PHY left in non-driving override by firmware, re-initialising\n");
+
+	pm_runtime_get_sync(qcom->dev);
+	dwc3_host_exit(dwc);
+	phy_power_off(phy);
+	phy_exit(phy);
+	ret = phy_init(phy);
+	if (!ret)
+		ret = phy_power_on(phy);
+	if (!ret)
+		ret = phy_set_mode(phy, PHY_MODE_USB_HOST);
+	if (ret)
+		dev_err(qcom->dev, "HS PHY re-init failed: %d\n", ret);
+	ret = dwc3_host_init(dwc);
+	if (ret)
+		dev_err(qcom->dev, "host re-init failed: %d\n", ret);
+	pm_runtime_put(qcom->dev);
+
+	qcom->hsphy_hijack_seen = 0;
+out:
+	mutex_unlock(&dwc->mutex);
+	schedule_delayed_work(&qcom->hsphy_watch, HSPHY_WATCH_PERIOD);
+}
+
+static void dwc3_qcom_hsphy_watch_init(struct dwc3_qcom *qcom)
+{
+	struct phy *phy = qcom->dwc.usb2_generic_phy[0];
+
+	if (!of_machine_is_compatible("xiaomi,lisa") || !phy || !phy->dev.of_node)
+		return;
+
+	qcom->hsphy_base = of_iomap(phy->dev.of_node, 0);
+	if (!qcom->hsphy_base) {
+		dev_warn(qcom->dev, "cannot map HS PHY, override watch disabled\n");
+		return;
+	}
+
+	INIT_DELAYED_WORK(&qcom->hsphy_watch, dwc3_qcom_hsphy_watch);
+	schedule_delayed_work(&qcom->hsphy_watch, HSPHY_WATCH_PERIOD);
+}
+
+static void dwc3_qcom_hsphy_watch_exit(struct dwc3_qcom *qcom)
+{
+	if (!qcom->hsphy_base)
+		return;
+	cancel_delayed_work_sync(&qcom->hsphy_watch);
+	iounmap(qcom->hsphy_base);
+	qcom->hsphy_base = NULL;
+}
+
+
 static int dwc3_qcom_probe(struct platform_device *pdev)
 {
 	struct dwc3_probe_data	probe_data = {};
@@ -727,6 +828,8 @@ static int dwc3_qcom_probe(struct platform_device *pdev)
 
 	qcom->is_suspended = false;
 
+	dwc3_qcom_hsphy_watch_init(qcom);
+
 	return 0;
 
 remove_core:
@@ -741,6 +844,8 @@ static void dwc3_qcom_remove(struct platform_device *pdev)
 {
 	struct dwc3 *dwc = platform_get_drvdata(pdev);
 	struct dwc3_qcom *qcom = to_dwc3_qcom(dwc);
+
+	dwc3_qcom_hsphy_watch_exit(qcom);
 
 	if (pm_runtime_resume_and_get(qcom->dev) < 0)
 		return;
@@ -758,6 +863,9 @@ static int dwc3_qcom_pm_suspend(struct device *dev)
 	struct dwc3_qcom *qcom = to_dwc3_qcom(dwc);
 	bool wakeup = device_may_wakeup(dev);
 	int ret;
+
+	if (qcom->hsphy_base)
+		cancel_delayed_work_sync(&qcom->hsphy_watch);
 
 	ret = dwc3_pm_suspend(&qcom->dwc);
 	if (ret)
@@ -788,6 +896,9 @@ static int dwc3_qcom_pm_resume(struct device *dev)
 	ret = dwc3_pm_resume(&qcom->dwc);
 	if (ret)
 		return ret;
+
+	if (qcom->hsphy_base)
+		schedule_delayed_work(&qcom->hsphy_watch, HSPHY_WATCH_PERIOD);
 
 	return 0;
 }
