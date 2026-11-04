@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/nvmem-consumer.h>
+#include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/power_supply.h>
 #include <linux/property.h>
@@ -98,6 +99,18 @@ enum qcom_battmgr_variant {
 #define WLS_BOOST_EN			6
 
 #define BATTMGR_CHG_CTRL_LIMIT_EN	0x48
+
+/*
+ * Xiaomi (MIUI) ADSP firmware OEM property interface, e.g. xiaomi-lisa.
+ * Opcode 0x48 is not implemented there; instead NIGHT_CHARGING makes the
+ * firmware vote FCC to 0 (charging stops, input stays on) above 80.00%
+ * SoC and drop the vote again at or below 75.00%. Thresholds are fixed
+ * in firmware.
+ */
+#define BATTMGR_XM_PROPERTY_SET		0x51
+#define XM_PROP_NIGHT_CHARGING		0x4c
+#define XM_NIGHT_CHG_END_SOC		80
+#define XM_NIGHT_CHG_START_SOC		75
 #define CHARGE_CTRL_START_THR_MIN	50
 #define CHARGE_CTRL_START_THR_MAX	95
 #define CHARGE_CTRL_END_THR_MIN		55
@@ -143,6 +156,13 @@ struct qcom_battmgr_charge_ctrl_request {
 	__le32 enable;
 	__le32 target_soc;
 	__le32 delta_soc;
+};
+
+struct qcom_battmgr_xm_request {
+	struct pmic_glink_hdr hdr;
+	__le32 battery_id;
+	__le32 property;
+	__le32 value;
 };
 
 struct qcom_battmgr_message {
@@ -312,6 +332,7 @@ struct qcom_battmgr {
 	struct pmic_glink_client *client;
 
 	enum qcom_battmgr_variant variant;
+	bool xm_night_charging;
 
 	struct power_supply *ac_psy;
 	struct power_supply *bat_psy;
@@ -525,6 +546,21 @@ static int qcom_battmgr_bat_get_property(struct power_supply *psy,
 		return 0;
 	}
 
+	/*
+	 * Xiaomi firmware does not implement BATT_CHG_CTRL_{START,END}_THR and
+	 * answers 0; asking it would clobber the state set via NIGHT_CHARGING.
+	 */
+	if (battmgr->xm_night_charging) {
+		if (psp == POWER_SUPPLY_PROP_CHARGE_CONTROL_START_THRESHOLD) {
+			val->intval = battmgr->info.charge_ctrl_start;
+			return 0;
+		}
+		if (psp == POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD) {
+			val->intval = battmgr->info.charge_ctrl_end;
+			return 0;
+		}
+	}
+
 	if (battmgr->variant == QCOM_BATTMGR_SC8280XP ||
 	    battmgr->variant == QCOM_BATTMGR_X1E80100)
 		ret = qcom_battmgr_bat_sc8280xp_update(battmgr, psp);
@@ -679,6 +715,30 @@ static int qcom_battmgr_set_charge_control(struct qcom_battmgr *battmgr,
 	return qcom_battmgr_request(battmgr, &request, sizeof(request));
 }
 
+static int qcom_battmgr_xm_set_night_charging(struct qcom_battmgr *battmgr, int end_soc)
+{
+	bool enable = end_soc <= XM_NIGHT_CHG_END_SOC;
+	struct qcom_battmgr_xm_request request = {
+		.hdr.owner = cpu_to_le32(PMIC_GLINK_OWNER_BATTMGR),
+		.hdr.type = cpu_to_le32(PMIC_GLINK_REQ_RESP),
+		.hdr.opcode = cpu_to_le32(BATTMGR_XM_PROPERTY_SET),
+		.property = cpu_to_le32(XM_PROP_NIGHT_CHARGING),
+		.value = cpu_to_le32(enable),
+	};
+	int ret;
+
+	mutex_lock(&battmgr->lock);
+	ret = qcom_battmgr_request(battmgr, &request, sizeof(request));
+	mutex_unlock(&battmgr->lock);
+	if (ret)
+		return ret;
+
+	battmgr->info.charge_ctrl_start = enable ? XM_NIGHT_CHG_START_SOC : 0;
+	battmgr->info.charge_ctrl_end = enable ? XM_NIGHT_CHG_END_SOC : 100;
+
+	return 0;
+}
+
 static int qcom_battmgr_set_charge_start_threshold(struct qcom_battmgr *battmgr, int start_soc)
 {
 	u32 target_soc, delta_soc;
@@ -787,8 +847,12 @@ static int qcom_battmgr_bat_set_property(struct power_supply *psy,
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_START_THRESHOLD:
+		if (battmgr->xm_night_charging)
+			return -EINVAL;	/* fixed at 75% by firmware */
 		return qcom_battmgr_set_charge_start_threshold(battmgr, pval->intval);
 	case POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD:
+		if (battmgr->xm_night_charging)
+			return qcom_battmgr_xm_set_night_charging(battmgr, pval->intval);
 		return qcom_battmgr_set_charge_end_threshold(battmgr, pval->intval);
 	default:
 		return -EINVAL;
@@ -890,6 +954,42 @@ static const enum power_supply_property sm8350_bat_props[] = {
 	POWER_SUPPLY_PROP_INTERNAL_RESISTANCE,
 	POWER_SUPPLY_PROP_STATE_OF_HEALTH,
 	POWER_SUPPLY_PROP_POWER_NOW,
+};
+
+static const enum power_supply_property sm8350_xm_bat_props[] = {
+	POWER_SUPPLY_PROP_STATUS,
+	POWER_SUPPLY_PROP_HEALTH,
+	POWER_SUPPLY_PROP_PRESENT,
+	POWER_SUPPLY_PROP_CHARGE_TYPE,
+	POWER_SUPPLY_PROP_CAPACITY,
+	POWER_SUPPLY_PROP_VOLTAGE_OCV,
+	POWER_SUPPLY_PROP_VOLTAGE_NOW,
+	POWER_SUPPLY_PROP_VOLTAGE_MAX,
+	POWER_SUPPLY_PROP_CURRENT_NOW,
+	POWER_SUPPLY_PROP_TEMP,
+	POWER_SUPPLY_PROP_TECHNOLOGY,
+	POWER_SUPPLY_PROP_CHARGE_COUNTER,
+	POWER_SUPPLY_PROP_CYCLE_COUNT,
+	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
+	POWER_SUPPLY_PROP_CHARGE_FULL,
+	POWER_SUPPLY_PROP_MODEL_NAME,
+	POWER_SUPPLY_PROP_TIME_TO_FULL_AVG,
+	POWER_SUPPLY_PROP_TIME_TO_EMPTY_AVG,
+	POWER_SUPPLY_PROP_INTERNAL_RESISTANCE,
+	POWER_SUPPLY_PROP_STATE_OF_HEALTH,
+	POWER_SUPPLY_PROP_POWER_NOW,
+	POWER_SUPPLY_PROP_CHARGE_CONTROL_START_THRESHOLD,
+	POWER_SUPPLY_PROP_CHARGE_CONTROL_END_THRESHOLD,
+};
+
+static const struct power_supply_desc sm8350_xm_bat_psy_desc = {
+	.name = "qcom-battmgr-bat",
+	.type = POWER_SUPPLY_TYPE_BATTERY,
+	.properties = sm8350_xm_bat_props,
+	.num_properties = ARRAY_SIZE(sm8350_xm_bat_props),
+	.get_property = qcom_battmgr_bat_get_property,
+	.set_property = qcom_battmgr_bat_set_property,
+	.property_is_writeable = qcom_battmgr_bat_is_writeable,
 };
 
 static const struct power_supply_desc sm8350_bat_psy_desc = {
@@ -1563,6 +1663,7 @@ static void qcom_battmgr_sm8350_callback(struct qcom_battmgr *battmgr,
 		break;
 	case BATTMGR_REQUEST_NOTIFICATION:
 	case BATTMGR_CHG_CTRL_LIMIT_EN:
+	case BATTMGR_XM_PROPERTY_SET:
 		battmgr->error = 0;
 		break;
 	default:
@@ -1696,8 +1797,17 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 			return dev_err_probe(dev, PTR_ERR(battmgr->wls_psy),
 					     "failed to register wireless charing power supply\n");
 	} else {
+		battmgr->xm_night_charging = battmgr->variant == QCOM_BATTMGR_SM8350 &&
+					      of_machine_is_compatible("xiaomi,lisa");
+		if (battmgr->xm_night_charging) {
+			battmgr->info.charge_ctrl_start = 0;
+			battmgr->info.charge_ctrl_end = 100;
+		}
+
 		if (battmgr->variant == QCOM_BATTMGR_SM8550)
 			psy_desc = &sm8550_bat_psy_desc;
+		else if (battmgr->xm_night_charging)
+			psy_desc = &sm8350_xm_bat_psy_desc;
 		else
 			psy_desc = &sm8350_bat_psy_desc;
 
