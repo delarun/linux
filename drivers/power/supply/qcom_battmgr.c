@@ -5,6 +5,7 @@
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/auxiliary_bus.h>
+#include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/nvmem-consumer.h>
@@ -111,6 +112,16 @@ enum qcom_battmgr_variant {
 #define XM_PROP_NIGHT_CHARGING		0x4c
 #define XM_NIGHT_CHG_END_SOC		80
 #define XM_NIGHT_CHG_START_SOC		75
+
+/*
+ * The NIGHT_CHARGING state lives in ADSP RAM only: it is lost on every boot
+ * and every ADSP restart. Re-apply the cached end threshold whenever the
+ * battmgr service comes up; this parameter only selects the initial value.
+ */
+static bool charge_limit = true;
+module_param(charge_limit, bool, 0444);
+MODULE_PARM_DESC(charge_limit,
+		 "Xiaomi lisa: limit charging to 80% from boot (default: Y)");
 #define CHARGE_CTRL_START_THR_MIN	50
 #define CHARGE_CTRL_START_THR_MAX	95
 #define CHARGE_CTRL_END_THR_MIN		55
@@ -1703,6 +1714,22 @@ static void qcom_battmgr_enable_worker(struct work_struct *work)
 	ret = qcom_battmgr_request(battmgr, &req, sizeof(req));
 	if (ret)
 		dev_err(battmgr->dev, "failed to request power notifications\n");
+
+	if (battmgr->xm_night_charging &&
+	    battmgr->info.charge_ctrl_end <= XM_NIGHT_CHG_END_SOC) {
+		int tries = 3;
+
+		while ((ret = qcom_battmgr_xm_set_night_charging(battmgr,
+						battmgr->info.charge_ctrl_end)) &&
+		       --tries && battmgr->service_up)
+			msleep(1000);
+
+		if (ret)
+			dev_err(battmgr->dev, "failed to apply charge limit: %d\n", ret);
+		else
+			dev_info(battmgr->dev, "charge limit %u%% applied\n",
+				 battmgr->info.charge_ctrl_end);
+	}
 }
 
 static void qcom_battmgr_pdr_notify(void *priv, int state)
@@ -1800,8 +1827,9 @@ static int qcom_battmgr_probe(struct auxiliary_device *adev,
 		battmgr->xm_night_charging = battmgr->variant == QCOM_BATTMGR_SM8350 &&
 					      of_machine_is_compatible("xiaomi,lisa");
 		if (battmgr->xm_night_charging) {
-			battmgr->info.charge_ctrl_start = 0;
-			battmgr->info.charge_ctrl_end = 100;
+			/* applied to the firmware once the service comes up */
+			battmgr->info.charge_ctrl_start = charge_limit ? XM_NIGHT_CHG_START_SOC : 0;
+			battmgr->info.charge_ctrl_end = charge_limit ? XM_NIGHT_CHG_END_SOC : 100;
 		}
 
 		if (battmgr->variant == QCOM_BATTMGR_SM8550)
