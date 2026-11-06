@@ -161,7 +161,10 @@
 		ramoops@a9000000 {
 			compatible = "ramoops";
 			reg = <0x0 0xa9000000 0x0 0x200000>;
-			pmsg-size = <0x200000>;
+			/* keep oops/panic dmesg and console across a warm reboot */
+			record-size = <0x40000>;
+			console-size = <0x80000>;
+			pmsg-size = <0x80000>;
 			ecc-size = <16>;
 			mem-type = <2>;
 		};
@@ -440,8 +443,14 @@
 
 		vreg_l7b_2p96: ldo7 {
 			regulator-name = "vreg_l7b_2p96";
-			regulator-min-microvolt = <2400000>;
-			regulator-max-microvolt = <3544000>;
+			/*
+			 * UFS VCC. Pinned like the stock DT (vcc-voltage-level
+			 * <2504000 2952000> + vcc-low-voltage-sup, i.e. 2.952V
+			 * while active) because the mainline UFS driver only
+			 * votes load, not voltage.
+			 */
+			regulator-min-microvolt = <2952000>;
+			regulator-max-microvolt = <2952000>;
 			regulator-initial-mode = <RPMH_REGULATOR_MODE_HPM>;
 			regulator-allow-set-load;
 			regulator-allowed-modes = <RPMH_REGULATOR_MODE_LPM
@@ -1301,13 +1310,15 @@
 };
 
 &sdhc_2 {
-	vmmc-supply = <&vreg_l7b_2p96>;
+	/* stock DT: SD card VDD is L9C at 2.96V, not the UFS VCC rail */
+	vmmc-supply = <&vreg_l9c_2p96>;
 	vqmmc-supply = <&vreg_l19b_1p8>;
 
 	pinctrl-0 = <&sdc2_clk>, <&sdc2_cmd>, <&sdc2_data>;
 	pinctrl-1 = <&sdc2_clk_sleep>, <&sdc2_cmd_sleep>, <&sdc2_data_sleep>;
 
-	status = "okay";
+	/* no card detect, so the slot is polled every second; unused here */
+	status = "disabled";
 };
 
 &sound {
